@@ -1,0 +1,7 @@
+# dataset and d2l package
+corpus_dataset/
+d2l-zh/
+
+# python conventional ignore
+Word2Vec/__pycache__/
+GloVe/__pycache__/
