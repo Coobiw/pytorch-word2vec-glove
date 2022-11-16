@@ -9,7 +9,7 @@ The word2vec code refers to the [d2l](https://zh-v2.d2l.ai/). And the GloVe theo
 ## Content
 
 - [Data Preparation](#Data-Preparation)
-- [GloVe co-occurence](#GloVe-co-occurence)
+- [GloVe co-occurence matrix](#GloVe-co-occurence-matrix)
 
 ## Data Preparation
 
