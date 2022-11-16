@@ -8,8 +8,8 @@ The word2vec code refers to the [d2l](https://zh-v2.d2l.ai/). And the GloVe theo
 
 ## Content
 
-- [Data Preparation](#Data Preparation)
-- [GloVe co-occurence](#GloVe co-occurence)
+- [Data Preparation](##Data Preparation)
+- [GloVe co-occurence](##GloVe co-occurence)
 
 ## Data Preparation
 
