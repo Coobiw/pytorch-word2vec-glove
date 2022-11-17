@@ -2,7 +2,7 @@
 
 This repo reproduces Word2Vec and GloVe to get good word embedding by PyTorch.
 
-The word2vec code refers to the [d2l](https://zh-v2.d2l.ai/). And the GloVe theory knowledge is from there.
+The word2vec code refers to the [d2l](https://zh-v2.d2l.ai/). And the theoretical knowledge of both is from there.
 
 
 
