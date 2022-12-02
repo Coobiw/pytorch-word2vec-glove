@@ -36,9 +36,9 @@ class Log_MSELoss(nn.Module):
         self.c = c
         self.alpha = alpha
 
-    def forward(self, inputs, target, mask):
-        log_target = torch.log(target)
-        loss = ((inputs - log_target)**2) * self.weight_func(target) * mask 
+    def forward(self, inputs, target_1,target_2, mask):
+        log_target = torch.log(target_1)
+        loss = ((inputs - log_target)**2) * self.weight_func(target_2) * mask 
         loss = loss.sum(dim=1)
         loss = loss / mask.sum(dim=1)
         loss = loss.mean(dim=0)
@@ -50,18 +50,19 @@ class Log_MSELoss(nn.Module):
         weight[target<self.c] = (target[target<self.c]/self.c)**self.alpha
         return weight
 
-
-def init_weights(m):
-    if type(m) == nn.Embedding:
-        nn.init.xavier_uniform_(m.weight)
-
-def train_one_epoch(model,optimizer,device,data_iter,vocab,loss):
+def train_one_epoch(model,optimizer,device,data_iter,loss,use_distance_weight):
     train_loss = AverageMeter()
     for batch in data_iter:
-        center,contexts,mask,label = [data.to(device) for data in batch]
+        if use_distance_weight:
+            center,contexts,mask,label,weight = [data.to(device) for data in batch]
+        else:
+            center,contexts,mask,label = [data.to(device) for data in batch]
         pred = model(center,contexts)
         
-        t_loss = loss(pred,label,mask)
+        if use_distance_weight:
+            t_loss = loss(pred,label,weight,mask)
+        else:
+            t_loss = loss(pred,label,label,mask)
         optimizer.zero_grad()
         t_loss.backward()
         optimizer.step()
@@ -87,59 +88,71 @@ def get_similar_tokens(model,query_token, k, vocab):
     cos = torch.mv(W, x) / torch.sqrt(torch.sum(W * W, dim=1) *
                                       torch.sum(x * x) + 1e-9)
     topk = torch.topk(cos, k=k+1)[1].cpu().numpy().astype('int32')
+    rtopk = torch.topk(cos.flip(dims=[0]),k=k)[1].cpu().numpy().astype('int32')
     for i in topk[1:]:  # 删除输入词
+        print(f'cosine sim={float(cos[i]):.3f}: {vocab.to_tokens(i)}')
+    for i in rtopk:
         print(f'cosine sim={float(cos[i]):.3f}: {vocab.to_tokens(i)}')
 
 
-def main():
+def main(save_vocab=False):
+    use_distance_weight = True
     bs, max_window_size = 512, 10
-    data_iter, vocab = load_data_ptb(bs, max_window_size,mode='train')
-    lr = 2e-3
+    data_iter, vocab = load_data_ptb(bs, max_window_size,use_distance_weight=use_distance_weight,mode='train',subsampled=True,load_vocab=True)
+    save_dir = './model_dw' if use_distance_weight else './model'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    lr = 1e-4
     num_epochs = 50
-    embedding_size = 100
+    embedding_size_lst = [16,32,64,96]
     
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = GloVe(len(vocab),embedding_size).to(device)
-    model.apply(init_weights)
+    for embedding_size in embedding_size_lst:
+        model = GloVe(len(vocab),embedding_size).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss = Log_MSELoss().to(device)
-    
-    loss_decription = 0.
-    pbar = trange(num_epochs)
-    for i in pbar:
-        loss_decription = train_one_epoch(model,optimizer,device,data_iter,vocab,loss)
-        description = f'Epoch: {i+1}  Train_Loss:{loss_decription:.3f}'
-        pbar.set_description(description)
-    
-    # save model
-    save_dir = '/home/charon/research/NLP/GloVe/model'
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    with open(os.path.join(save_dir,'model.pth'),'wb') as f:
-        torch.save(model,f)
-    
-    with open(os.path.join(save_dir,'token2idx.pkl'),'wb') as f:
-        pickle.dump(vocab.token2idx,f)
-    
-    with open(os.path.join(save_dir,'idx2token.pkl'),'wb') as f:
-        pickle.dump(vocab.idx2token,f)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        loss = Log_MSELoss().to(device)
+        
+        loss_decription = 0.
+        pbar = trange(num_epochs)
+        for i in pbar:
+            loss_decription = train_one_epoch(model,optimizer,device,data_iter,loss,use_distance_weight)
+            description = f'Epoch: {i+1}  Train_Loss:{loss_decription:.3f}'
+            pbar.set_description(description)
+
+        # save model
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        with open(os.path.join(save_dir,f'model_{embedding_size}.pth'),'wb') as f:
+            torch.save(model,f)
+
+        if save_vocab:
+            with open(os.path.join(save_dir,'token2idx.pkl'),'wb') as f:
+                pickle.dump(vocab.token2idx,f)
+            
+            with open(os.path.join(save_dir,'idx2token.pkl'),'wb') as f:
+                pickle.dump(vocab.idx2token,f)
+        print((model.context.weight.data + model.center.weight.data)[:2,:])
+    return save_dir
 
 if __name__ == "__main__":
-    # main()
-    model_path = '/home/charon/research/NLP/GloVe/model/model.pth'
-    save_dir = '/home/charon/research/NLP/GloVe/model/'
-    with open(model_path,'rb') as f:
+    train_tag = False
+    if train_tag:
+        save_dir = main()
+    else:
+        save_dir = './model_dw'
+    vocab_dir = './vocab'
+    with open(os.path.join(save_dir,'model_16.pth'),'rb') as f:
         model = torch.load(f)
 
     from data_process import Vocab
     vocab = Vocab()
-    with open(os.path.join(save_dir,'token2idx.pkl'),'rb') as f:
+    with open(os.path.join(vocab_dir,'token2idx.pkl'),'rb') as f:
         vocab.token2idx = pickle.load(f)
     
-    with open(os.path.join(save_dir,'idx2token.pkl'),'rb') as f:
+    with open(os.path.join(vocab_dir,'idx2token.pkl'),'rb') as f:
         vocab.idx2token = pickle.load(f)
 
-    get_similar_tokens(model,'chip',10,vocab)
+    get_similar_tokens(model,'apple',5,vocab)
 

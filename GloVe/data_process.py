@@ -145,19 +145,74 @@ def get_centers_and_contexts(corpus, max_window_size):
                                  min(len(line), i + 1 + window_size))) # get the context token in the window(both left and right)
             # remove the center token
             indices.remove(i)
-            contexts.append([line[idx] for idx in indices])
+            contexts.append([(line[idx],abs(idx-i)) for idx in indices])
     return centers, contexts
 
-def coappearence_computation(vocab_size,centers,contexts):
+def coappearence_computation(vocab_size,centers,contexts,use_distance_weight=False):
     coappearence_matrix = torch.zeros((vocab_size,vocab_size))
+    if use_distance_weight:
+        coappearence_matrix_2 = torch.zeros((vocab_size,vocab_size))
     lc = len(centers)
     for i in range(lc):
         row = centers[i]
         columns = contexts[i]
         for col in columns:
-            coappearence_matrix[row,col] +=1
-    return coappearence_matrix
+            # print(col)
+            coappearence_matrix[row,col[0]] += 1.
+            if use_distance_weight:
+                coappearence_matrix_2[row,col[0]] +=1. / col[1]
+    if use_distance_weight:
+        return coappearence_matrix,coappearence_matrix_2
+    else:
+        return coappearence_matrix
 
+
+
+def batchify(data):
+    '''
+    if want to batchify the data, we need:
+        - padding the data because the num_context_per_center is not the same
+        - generate the mask so that the padding part will not be included in the loss_func computation
+    '''
+    max_len = max([len(c) for _,c,_ in data]) 
+    centers,all_contexts,all_masks,all_labels = [],[],[],[]
+    for i,item in enumerate(data):
+        center,context,label = item
+        centers.append(center)
+        cur_len = len(context) 
+        all_contexts.append(context + [0]*(max_len - cur_len))
+        all_masks.append([1.]*cur_len + [0.]*(max_len-cur_len))
+        all_labels.append(label + [1.]*(max_len-len(label))) # can't pad 0,because log(0) = -inf
+    
+    centers = torch.tensor(centers).reshape(-1,1)
+    all_contexts = torch.tensor(all_contexts)
+    all_masks = torch.tensor(all_masks)
+    all_labels = torch.tensor(all_labels)
+    return centers,all_contexts,all_masks,all_labels
+
+def batchify2(data):
+    '''
+    if want to batchify the data, we need:
+        - padding the data because the num_context_per_center is not the same
+        - generate the mask so that the padding part will not be included in the loss_func computation
+    '''
+    max_len = max([len(c) for _,c,_,_ in data]) 
+    centers,all_contexts,all_masks,all_labels,all_weights = [],[],[],[],[]
+    for i,item in enumerate(data):
+        center,context,label,weight = item
+        centers.append(center)
+        cur_len = len(context) 
+        all_contexts.append(context + [0]*(max_len - cur_len))
+        all_masks.append([1.]*cur_len + [0.]*(max_len-cur_len))
+        all_labels.append(label + [1.]*(max_len-len(label))) # can't pad 0,because log(0) = -inf
+        all_weights.append(weight + [1.]*(max_len-len(weight)))
+    
+    centers = torch.tensor(centers).reshape(-1,1)
+    all_contexts = torch.tensor(all_contexts)
+    all_masks = torch.tensor(all_masks)
+    all_labels = torch.tensor(all_labels)
+    all_weights = torch.tensor(all_weights)
+    return centers,all_contexts,all_masks,all_labels,all_weights
 
 
 def batchify(data):
